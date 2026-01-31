@@ -89,7 +89,7 @@ func main() {
 		if err == nil {
 			for _, f := range files { configs = append(configs, f.Name()) }
 		} else {
-			cmd := exec.Command("snapper", "list-configs")
+			cmd := exec.Command("/run/current-system/sw/bin/snapper", "list-configs")
 			out, _ := cmd.Output()
 			lines := strings.Split(string(out), "\n")
 			for i, line := range lines {
@@ -107,7 +107,7 @@ func main() {
 
 	http.HandleFunc("/api/get-config", func(w http.ResponseWriter, r *http.Request) {
 		config := r.URL.Query().Get("config")
-		cmd := exec.Command("snapper", "-c", config, "get-config")
+		cmd := exec.Command("/run/current-system/sw/bin/snapper", "-c", config, "get-config")
 		output, _ := cmd.CombinedOutput()
 		lines := strings.Split(string(output), "\n")
 		res := make(map[string]string)
@@ -128,7 +128,7 @@ func main() {
 
 	http.HandleFunc("/api/snapshots", func(w http.ResponseWriter, r *http.Request) {
 		config := r.URL.Query().Get("config")
-		cmd := exec.Command("snapper", "-c", config, "list", "--columns", "number,type,pre-number,date,user,cleanup,description,userdata")
+		cmd := exec.Command("/run/current-system/sw/bin/snapper", "-c", config, "list", "--columns", "number,type,pre-number,date,user,cleanup,description,userdata")
 		output, _ := cmd.Output()
 		json.NewEncoder(w).Encode(parseSnapshotList(string(output)))
 	})
@@ -136,7 +136,7 @@ func main() {
 	http.HandleFunc("/api/status", func(w http.ResponseWriter, r *http.Request) {
 		config := r.URL.Query().Get("config")
 		rangeStr := r.URL.Query().Get("range")
-		cmd := exec.Command("snapper", "-c", config, "status", rangeStr)
+		cmd := exec.Command("/run/current-system/sw/bin/snapper", "-c", config, "status", rangeStr)
 		output, _ := cmd.Output()
 		json.NewEncoder(w).Encode(parseDiffList(string(output)))
 	})
@@ -151,7 +151,7 @@ func main() {
 		json.NewDecoder(r.Body).Decode(&req)
 		args := []string{"-c", req.Config, "undochange", req.Range, "--"}
 		args = append(args, req.Paths...)
-		exec.Command("snapper", args...).Run()
+		exec.Command("/run/current-system/sw/bin/snapper", args...).Run()
 		w.WriteHeader(200)
 	})
 
@@ -161,7 +161,7 @@ func main() {
 		userdata := r.URL.Query().Get("userdata")
 		args := []string{"-c", config, "create", "--description", desc}
 		if userdata != "" { args = append(args, "--userdata", userdata) }
-		if err := exec.Command("snapper", args...).Run(); err != nil {
+		if err := exec.Command("/run/current-system/sw/bin/snapper", args...).Run(); err != nil {
 			http.Error(w, err.Error(), 500)
 			return
 		}
@@ -171,7 +171,7 @@ func main() {
 	http.HandleFunc("/api/delete", func(w http.ResponseWriter, r *http.Request) {
 		config := r.URL.Query().Get("config")
 		id := r.URL.Query().Get("id")
-		exec.Command("snapper", "-c", config, "delete", id).Run()
+		exec.Command("/run/current-system/sw/bin/snapper", "-c", config, "delete", id).Run()
 		w.WriteHeader(200)
 	})
 
