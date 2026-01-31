@@ -12,6 +12,7 @@
             --text: #abb2bf;
             --text-white: #ffffff;
             --primary: #61afef;
+            --secondary: #c678dd;
             --success: #98c379;
             --danger: #e06c75;
             --warning: #d19a66;
@@ -77,12 +78,13 @@
         }
 
         .btn-primary { background: var(--primary); color: var(--bg); }
+        .btn-diff { background: var(--secondary); color: var(--bg); }
+        .btn-diff:hover { opacity: 0.9; }
         .btn-danger { background: transparent; border-color: var(--danger); color: var(--danger); }
         .btn-danger:hover { background: var(--danger); color: var(--bg); }
         .btn-outline { background: transparent; border-color: var(--border); color: var(--text); }
         .btn-outline:hover { background: var(--surface-hover); color: var(--text-white); }
 
-        /* Snapper Info Card */
         .info-card {
             background: var(--surface);
             border: 1px solid var(--border);
@@ -96,7 +98,6 @@
         .info-item label { display: block; font-size: 11px; color: var(--text); opacity: 0.6; text-transform: uppercase; margin-bottom: 4px; }
         .info-item span { font-size: 15px; font-weight: 600; color: var(--primary); }
 
-        /* Snapshot List */
         .list-container {
             background: var(--surface);
             border: 1px solid var(--border);
@@ -136,7 +137,6 @@
 
         .actions { display: flex; gap: 8px; justify-content: flex-end; align-items: center; }
 
-        /* Modals */
         .modal-overlay {
             display: none;
             position: fixed;
@@ -165,7 +165,6 @@
         .modal-body { padding: 32px; overflow-y: auto; flex: 1; }
         .modal-footer { padding: 20px 32px; border-top: 1px solid var(--border); display: flex; justify-content: flex-end; gap: 12px; }
 
-        /* Tree View */
         .tree-node {
             display: flex; align-items: center; padding: 6px 0; gap: 10px; cursor: pointer;
         }
@@ -179,7 +178,6 @@
         .tag-del { background: var(--danger); color: var(--bg); }
         .tag-mod { background: var(--warning); color: var(--bg); }
 
-        /* Loading */
         .mask { position: absolute; inset: 0; background: rgba(0,0,0,0.4); display: none; align-items: center; justify-content: center; z-index: 100; border-radius: 12px; }
         .spinner { width: 32px; height: 32px; border: 3px solid var(--border); border-top-color: var(--primary); border-radius: 50%; animation: spin 0.8s linear infinite; }
         @keyframes spin { to { transform: rotate(360deg); } }
@@ -273,6 +271,18 @@
         let selectedPaths = new Set();
         const $ = id => document.getElementById(id);
 
+        function formatSnapperDate(dateStr) {
+            if (!dateStr || dateStr === "current") return dateStr;
+            try {
+                // Snapper format: Sat 31 Jan 2026 11:00:02 PM CST
+                // Better format: 2026-01-31 23:00
+                const d = new Date(dateStr);
+                if (isNaN(d.getTime())) return dateStr;
+                const pad = n => String(n).padStart(2, '0');
+                return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+            } catch (e) { return dateStr; }
+        }
+
         async function init() {
             const res = await fetch('/api/configs');
             const configs = await res.json();
@@ -291,7 +301,7 @@
             const res = await fetch(`/api/get-config?config=${currentConfig}`);
             const d = await res.json();
             $('info-path').innerText = d.SUBVOLUME || '/';
-            $('info-cleanup').innerText = d.TIMELINE_CREATE === 'yes' ? 'On' : 'Off';
+            $('info-cleanup').innerText = d.TIMELINE_CREATE === 'yes' ? 'Enabled' : 'Disabled';
             $('info-limits').innerText = `${d.TIMELINE_LIMIT_HOURLY || 0}H / ${d.TIMELINE_LIMIT_DAILY || 0}D / ${d.TIMELINE_LIMIT_WEEKLY || 0}W / ${d.TIMELINE_LIMIT_MONTHLY || 0}M / ${d.TIMELINE_LIMIT_YEARLY || 0}Y`;
             
             $('modal-conf-display').innerText = currentConfig;
@@ -305,11 +315,11 @@
             $('snap-list').innerHTML = snaps.reverse().map(s => `
                 <tr>
                     <td><span class="id-badge">${s.id}</span></td>
-                    <td><div style="font-size:13px">${s.date}</div></td>
+                    <td><div style="font-size:13px; color:var(--primary)">${formatSnapperDate(s.date)}</div></td>
                     <td><b style="color:var(--text-white)">${s.description || '-'}</b></td>
                     <td><span style="font-size:12px; opacity:0.8">${s.userdata || '-'}</span></td>
                     <td class="actions">
-                        <button class="btn-outline" onclick="openDiff(${s.id})">Diff</button>
+                        <button class="btn-diff" onclick="openDiff(${s.id})">Diff</button>
                         <button class="btn-danger" onclick="doDelete(${s.id})">Delete</button>
                     </td>
                 </tr>
