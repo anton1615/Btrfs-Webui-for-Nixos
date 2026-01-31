@@ -34,21 +34,14 @@ type DiffEntry struct {
 func parseSnapshotList(input string) []Snapshot {
 	lines := strings.Split(input, "\n")
 	snapshots := []Snapshot{}
-	
 	for i, line := range lines {
 		if i < 2 || strings.TrimSpace(line) == "" { continue }
-		
-		// Normalize separator
 		line = strings.ReplaceAll(line, "│", "|")
 		parts := strings.Split(line, "|")
-		
-		// Columns: number, type, pre-number, date, user, cleanup, description, userdata
 		if len(parts) < 7 { continue }
-
 		idStr := strings.TrimSpace(parts[0])
 		id, err := strconv.Atoi(idStr)
 		if err != nil { continue }
-
 		snap := Snapshot{
 			ID:          id,
 			Type:        strings.TrimSpace(parts[1]),
@@ -58,11 +51,9 @@ func parseSnapshotList(input string) []Snapshot {
 			Cleanup:     strings.TrimSpace(parts[5]),
 			Description: strings.TrimSpace(parts[6]),
 		}
-
 		if len(parts) >= 8 {
 			snap.UserData = strings.TrimSpace(parts[7])
 		}
-
 		snapshots = append(snapshots, snap)
 	}
 	return snapshots
@@ -75,14 +66,11 @@ func parseDiffList(input string) []DiffEntry {
 		if len(line) < 3 { continue }
 		parts := strings.Fields(line)
 		if len(parts) < 2 { continue }
-		
 		action := string(line[0])
 		if action == "c" { action = "M" }
-		
 		pathIndex := strings.Index(line, "/")
 		if pathIndex == -1 { continue }
 		path := strings.TrimSpace(line[pathIndex:])
-		
 		entries = append(entries, DiffEntry{Action: action, Path: path})
 	}
 	return entries
@@ -96,8 +84,9 @@ func main() {
 	})
 
 	http.HandleFunc("/api/configs", func(w http.ResponseWriter, r *http.Request) {
-		files, _ := ioutil.ReadDir("/etc/snapper/configs")
+		files, err := ioutil.ReadDir("/etc/snapper/configs")
 		var configs []string
+		if err == nil {
 			for _, f := range files { configs = append(configs, f.Name()) }
 		} else {
 			cmd := exec.Command("snapper", "list-configs")
@@ -105,14 +94,11 @@ func main() {
 			lines := strings.Split(string(out), "\n")
 			for i, line := range lines {
 				if i < 2 || line == "" { continue }
-				// Robust parsing for configs
 				line = strings.ReplaceAll(line, "│", " ")
 				parts := strings.Fields(line)
 				if len(parts) > 0 {
 					cfg := parts[0]
-					if cfg != "Config" && !strings.Contains(cfg, "──") { 
-						configs = append(configs, cfg) 
-					}
+					if cfg != "Config" && !strings.Contains(cfg, "──") { configs = append(configs, cfg) }
 				}
 			}
 		}
@@ -122,30 +108,19 @@ func main() {
 	http.HandleFunc("/api/get-config", func(w http.ResponseWriter, r *http.Request) {
 		config := r.URL.Query().Get("config")
 		cmd := exec.Command("snapper", "-c", config, "get-config")
-		output, err := cmd.CombinedOutput()
-		if err != nil {
-			fmt.Printf("Error: %v\n", err)
-		}
-		
+		output, _ := cmd.CombinedOutput()
 		lines := strings.Split(string(output), "\n")
 		res := make(map[string]string)
 		for _, line := range lines {
-			if strings.TrimSpace(line) == "" || strings.Contains(line, "──") || strings.HasPrefix(line, "Key") {
-				continue
-			}
-			
-			// Replace delimiter with something unique or just rely on structure
-			// Format: KEY <spaces> │ <spaces> VALUE
-			
-			if idx := strings.Index(line, "│"); idx > 0 {
-				key := strings.TrimSpace(line[:idx])
-				val := strings.TrimSpace(line[idx+3:]) // Skip │ and space? No, safer to just trim
-				val = strings.TrimSpace(strings.Replace(line[idx:], "│", "", 1))
-				res[key] = val
-			} else if idx := strings.Index(line, "|"); idx > 0 {
-				key := strings.TrimSpace(line[:idx])
-				val := strings.TrimSpace(strings.Replace(line[idx:], "|", "", 1))
-				res[key] = val
+			sep := ""
+			if strings.Contains(line, "│") { sep = "│" } else if strings.Contains(line, "|") { sep = "|" }
+			if sep != "" {
+				parts := strings.Split(line, sep)
+				if len(parts) == 2 {
+					key := strings.TrimSpace(parts[0])
+					val := strings.TrimSpace(parts[1])
+					if key != "" && key != "Key" && !strings.Contains(key, "──") { res[key] = val }
+				}
 			}
 		}
 		json.NewEncoder(w).Encode(res)
@@ -174,7 +149,7 @@ func main() {
 			Paths  []string `json:"paths"`
 		}
 		json.NewDecoder(r.Body).Decode(&req)
-		args := []string{" -c", req.Config, "undochange", req.Range, "--"}
+		args := []string{"-c", req.Config, "undochange", req.Range, "--"}
 		args = append(args, req.Paths...)
 		exec.Command("snapper", args...).Run()
 		w.WriteHeader(200)
@@ -184,9 +159,12 @@ func main() {
 		config := r.URL.Query().Get("config")
 		desc := r.URL.Query().Get("description")
 		userdata := r.URL.Query().Get("userdata")
-		args := []string{" -c", config, "create", "--description", desc}
+		args := []string{"-c", config, "create", "--description", desc}
 		if userdata != "" { args = append(args, "--userdata", userdata) }
-		exec.Command("snapper", args...).Run()
+		if err := exec.Command("snapper", args...).Run(); err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
 		w.WriteHeader(201)
 	})
 
