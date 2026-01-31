@@ -8,7 +8,6 @@ import (
 	"io/ioutil"
 	"net/http"
 	"os/exec"
-	"regexp"
 	"strconv"
 	"strings"
 )
