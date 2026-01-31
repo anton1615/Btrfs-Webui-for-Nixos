@@ -35,27 +35,46 @@ type DiffEntry struct {
 func parseSnapshotList(input string) []Snapshot {
 	lines := strings.Split(input, "\n")
 	snapshots := []Snapshot{}
-	// Updated regex to include 8th column: User Data
-	re := regexp.MustCompile(`^\s*(\d+)\s*[|│]\s*(\w+)\s*[|│]\s*(\d*)\s*[|│]\s*([^|│]*)\s*[|│]\s*([^|│]*)\s*[|│]\s*([^|│]*)\s*[|│]\s*([^|│]*)\s*[|│]\s*([^|│]*)`)
+	
+	// Snapper list output table usually has headers on the first 2 lines
+	// The separator is usually " | " or " │ "
+	
 	for i, line := range lines {
 		if i < 2 || strings.TrimSpace(line) == "" {
 			continue
 		}
-		match := re.FindStringSubmatch(line)
-		if len(match) < 9 {
+		
+		// Normalize separators to pipe
+		line = strings.ReplaceAll(line, "│", "|")
+		parts := strings.Split(line, "|")
+		
+		// Expecting at least 7 columns (ID, Type, Pre, Date, User, Cleanup, Desc)
+		// Userdata is 8th column (optional in output format depending on ver)
+		if len(parts) < 7 {
 			continue
 		}
-		id, _ := strconv.Atoi(match[1])
-		snapshots = append(snapshots, Snapshot{
+
+		idStr := strings.TrimSpace(parts[0])
+		id, err := strconv.Atoi(idStr)
+		if err != nil {
+			continue // Skip if ID is not a number (e.g. current row marker)
+		}
+
+		snap := Snapshot{
 			ID:          id,
-			Type:        strings.TrimSpace(match[2]),
-			PreID:       strings.TrimSpace(match[3]),
-			Date:        strings.TrimSpace(match[4]),
-			User:        strings.TrimSpace(match[5]),
-			Cleanup:     strings.TrimSpace(match[6]),
-			Description: strings.TrimSpace(match[7]),
-			UserData:    strings.TrimSpace(match[8]),
-		})
+			Type:        strings.TrimSpace(parts[1]),
+			PreID:       strings.TrimSpace(parts[2]),
+			Date:        strings.TrimSpace(parts[3]),
+			User:        strings.TrimSpace(parts[4]),
+			Cleanup:     strings.TrimSpace(parts[5]),
+			Description: strings.TrimSpace(parts[6]),
+		}
+
+		if len(parts) >= 8 {
+			snap.UserData = strings.TrimSpace(parts[7])
+		}
+
+		snapshots = append(snapshots, snap)
 	}
 	return snapshots
 }
@@ -64,10 +83,42 @@ func parseDiffList(input string) []DiffEntry {
 	lines := strings.Split(input, "\n")
 	var entries []DiffEntry
 	for _, line := range lines {
-		if len(line) < 10 {
+		// Status line format: "c..... /path/to/file"
+		// Only care about lines with content
+		if len(line) < 3 {
 			continue
 		}
-		entries = append(entries, DiffEntry{Action: string(line[0]), Path: strings.TrimSpace(line[7:])})
+		
+		// The first character usually indicates the change type (+, -, c, .)
+		// Sometimes there's whitespace.
+		parts := strings.Fields(line)
+		if len(parts) < 2 {
+			continue
+		}
+		
+		// Snapper status output:
+		// +..... /file/path
+		// -..... /file/path
+		// c..... /file/path
+		
+		action := string(line[0])
+		// Basic mapping
+		if action == "c" { action = "M" } // Modified
+		
+		// Path starts after the status columns
+		// Status columns are fixed width (usually space separated from path)
+		// We can just take the last part or everything after the first whitespace block
+		
+		// Simple approach: split by first space, but file paths can have spaces.
+		// Snapper status usually puts path at the end.
+		// However, let's use the provided logic which seemed to work for tree view
+		// Previous logic: entries = append(entries, DiffEntry{Action: string(line[0]), Path: strings.TrimSpace(line[7:])})
+		// We'll stick to a slightly more robust one
+		
+		path := line[strings.Index(line, " ")+1:]
+		path = strings.TrimSpace(path)
+		
+		entries = append(entries, DiffEntry{Action: action, Path: path})
 	}
 	return entries
 }
@@ -95,7 +146,9 @@ func main() {
 		lines := strings.Split(string(output), "\n")
 		res := make(map[string]string)
 		for _, line := range lines {
-			parts := strings.Split(line, "│")
+			// Normalize separator
+			line = strings.ReplaceAll(line, "│", "|")
+			parts := strings.Split(line, "|")
 			if len(parts) == 2 {
 				res[strings.TrimSpace(parts[0])] = strings.TrimSpace(parts[1])
 			}
@@ -105,7 +158,8 @@ func main() {
 
 	http.HandleFunc("/api/snapshots", func(w http.ResponseWriter, r *http.Request) {
 		config := r.URL.Query().Get("config")
-		cmd := exec.Command("snapper", "-c", config, "list")
+		// Force list columns to ensure we get userdata
+		cmd := exec.Command("snapper", "-c", config, "list", "--columns", "id,type,pre-id,date,user,cleanup,description,userdata")
 		output, _ := cmd.Output()
 		json.NewEncoder(w).Encode(parseSnapshotList(string(output)))
 	})
@@ -128,9 +182,31 @@ func main() {
 			Paths  []string `json:"paths"`
 		}
 		json.NewDecoder(r.Body).Decode(&req)
-		args := []string{"-c", req.Config, "undochange", req.Range, "--"}
+		
+		// Construct args: snapper -c config undochange 1..2 -- "path1" "path2"
+		args := []string{" -c", req.Config, "undochange", req.Range, "--"}
 		args = append(args, req.Paths...)
-		exec.Command("snapper", args...).Run()
+		
+		err := exec.Command("snapper", args...).Run()
+		if err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
+		w.WriteHeader(200)
+	})
+
+	http.HandleFunc("/api/rollback", func(w http.ResponseWriter, r *http.Request) {
+		config := r.URL.Query().Get("config")
+		id := r.URL.Query().Get("id")
+		desc := fmt.Sprintf("Rollback to snapshot %s via WebUI", id)
+		
+		// Rollback usually requires root config
+		cmd := exec.Command("snapper", "-c", config, "rollback", "-d", desc, id)
+		err := cmd.Run()
+		if err != nil {
+			http.Error(w, "Rollback failed: "+err.Error(), 500)
+			return
+		}
 		w.WriteHeader(200)
 	})
 
@@ -138,10 +214,11 @@ func main() {
 		config := r.URL.Query().Get("config")
 		desc := r.URL.Query().Get("description")
 		userdata := r.URL.Query().Get("userdata")
-		args := []string{"-c", config, "create", "--description", desc}
+		args := []string{" -c", config, "create", "--description", desc}
 		if userdata != "" {
 			args = append(args, "--userdata", userdata)
 		}
+		// Print allows use to use default type (usually 'single')
 		err := exec.Command("snapper", args...).Run()
 		if err != nil {
 			http.Error(w, err.Error(), 500)

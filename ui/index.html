@@ -136,6 +136,15 @@
 
         .actions { display: flex; gap: 8px; justify-content: flex-end; align-items: center; }
 
+        /* Rollback Button */
+        #rollback-btn {
+            background: var(--danger);
+            color: var(--bg);
+            border: none;
+            display: none; /* Hidden by default */
+        }
+        #rollback-btn:hover { opacity: 0.9; }
+
         /* Modals */
         .modal-overlay {
             display: none;
@@ -193,12 +202,13 @@
             <div class="toolbar">
                 <select id="config-select" onchange="onConfigChange()"></select>
                 <button class="btn-primary" onclick="openCreateModal()">+ Create Snapshot</button>
+                <button id="rollback-btn" onclick="openRollbackModal()">⚠️ Rollback System</button>
             </div>
         </header>
 
         <section class="info-card" id="snapper-info">
             <div class="info-item"><label>Target Subvolume</label><span id="info-path">-</span></div>
-            <div class="info-item"><label>Cleanup Timeline</label><span id="info-cleanup">-</span></div>
+            <div class="info-item"><label>Cleanup Schedule</label><span id="info-cleanup">-</span></div>
             <div class="info-item"><label>Retention (H/D/W/M/Y)</label><span id="info-limits">-</span></div>
         </section>
 
@@ -267,6 +277,32 @@
         </div>
     </div>
 
+    <!-- Rollback Warning Modal -->
+    <div class="modal-overlay" id="rollback-modal">
+        <div class="modal" style="max-width: 500px; border-color: var(--danger);">
+            <div class="modal-header">
+                <h2 style="color: var(--danger);">⚠️ SYSTEM ROLLBACK</h2>
+            </div>
+            <div class="modal-body">
+                <p style="font-size: 16px; line-height: 1.6;">
+                    You are about to rollback the <b>ROOT filesystem</b> to a previous snapshot.
+                </p>
+                <p style="color: var(--text); opacity: 0.8;">
+                    This action creates a new read-write snapshot and sets it as the default boot target.
+                    <b>A system reboot is REQUIRED immediately after this operation.</b>
+                </p>
+                <div style="margin-top: 20px;">
+                    <label style="display:block; font-size:12px; margin-bottom:6px;">Snapshot ID to Rollback To:</label>
+                    <input type="number" id="rollback-id-input" placeholder="e.g. 150" style="width:100%">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-outline" onclick="closeModals()">Cancel</button>
+                <button class="btn-danger" onclick="doRollback()">CONFIRM ROLLBACK & REBOOT</button>
+            </div>
+        </div>
+    </div>
+
     <script>
         let currentConfig = '';
         let selectedId = null;
@@ -291,9 +327,16 @@
             const res = await fetch(`/api/get-config?config=${currentConfig}`);
             const d = await res.json();
             $('info-path').innerText = d.SUBVOLUME || '/';
-            $('info-cleanup').innerText = d.TIMELINE_CLEANUP === 'yes' ? 'On' : 'Off';
+            $('info-cleanup').innerText = d.TIMELINE_CREATE === 'yes' ? 'Enabled' : 'Disabled';
             $('info-limits').innerText = `${d.TIMELINE_LIMIT_HOURLY || 0}H / ${d.TIMELINE_LIMIT_DAILY || 0}D / ${d.TIMELINE_LIMIT_WEEKLY || 0}W / ${d.TIMELINE_LIMIT_MONTHLY || 0}M / ${d.TIMELINE_LIMIT_YEARLY || 0}Y`;
             
+            // Show/Hide Rollback Button if path is root
+            if (d.SUBVOLUME === '/') {
+                $('rollback-btn').style.display = 'inline-flex';
+            } else {
+                $('rollback-btn').style.display = 'none';
+            }
+
             $('modal-conf-display').innerText = currentConfig;
             $('modal-path-display').innerText = d.SUBVOLUME || '/';
         }
@@ -418,7 +461,12 @@
         }
 
         function openCreateModal() { $('create-modal').style.display = 'flex'; }
-        function closeModals() { document.querySelectorAll('.modal-overlay').forEach(m => m.style.display = 'none'); }
+        
+        function openRollbackModal() { $('rollback-modal').style.display = 'flex'; }
+
+        function closeModals() { 
+            document.querySelectorAll('.modal-overlay').forEach(m => m.style.display = 'none'); 
+        }
 
         async function doCreate() {
             const desc = $('desc-input').value;
@@ -427,10 +475,32 @@
             $('list-mask').style.display = 'flex';
             const res = await fetch(`/api/create?config=${currentConfig}&description=${encodeURIComponent(desc)}&userdata=${encodeURIComponent(user)}`, {method:'POST'});
             if(res.ok) {
-                // Wait a bit for snapper to finish disk write
-                setTimeout(loadSnapshots, 500);
+                setTimeout(loadSnapshots, 800); // Increased delay for disk sync
             } else {
                 alert('Create failed');
+                $('list-mask').style.display = 'none';
+            }
+        }
+
+        async function doRollback() {
+            const id = $('rollback-id-input').value;
+            if(!id) return alert('Please enter a Snapshot ID');
+            
+            $('rollback-modal').style.display = 'none';
+            $('list-mask').style.display = 'flex';
+            
+            try {
+                const res = await fetch(`/api/rollback?config=${currentConfig}&id=${id}`, { method: 'POST' });
+                if(res.ok) {
+                    alert('Rollback successful! The system will now reboot.');
+                    // In a real scenario, you might trigger a reboot API here
+                } else {
+                    const txt = await res.text();
+                    alert('Rollback failed: ' + txt);
+                }
+            } catch(e) {
+                alert('Connection error during rollback');
+            } finally {
                 $('list-mask').style.display = 'none';
             }
         }
