@@ -78,8 +78,8 @@
         }
 
         .btn-primary { background: var(--primary); color: var(--bg); }
-        .btn-diff { background: var(--secondary); color: var(--bg); }
-        .btn-diff:hover { opacity: 0.9; }
+        .btn-diff { background: transparent; border: 1px solid var(--secondary); color: var(--secondary); }
+        .btn-diff:hover { background: var(--secondary); color: var(--bg); }
         .btn-danger { background: transparent; border-color: var(--danger); color: var(--danger); }
         .btn-danger:hover { background: var(--danger); color: var(--bg); }
         .btn-outline { background: transparent; border-color: var(--border); color: var(--text); }
@@ -274,8 +274,6 @@
         function formatSnapperDate(dateStr) {
             if (!dateStr || dateStr === "current") return dateStr;
             try {
-                // Snapper format: Sat 31 Jan 2026 11:00:02 PM CST
-                // Better format: 2026-01-31 23:00
                 const d = new Date(dateStr);
                 if (isNaN(d.getTime())) return dateStr;
                 const pad = n => String(n).padStart(2, '0');
@@ -315,7 +313,7 @@
             $('snap-list').innerHTML = snaps.reverse().map(s => `
                 <tr>
                     <td><span class="id-badge">${s.id}</span></td>
-                    <td><div style="font-size:13px; color:var(--primary)">${formatSnapperDate(s.date)}</div></td>
+                    <td><div style="font-size:13px; color:var(--primary); font-weight: bold;">${formatSnapperDate(s.date)}</div></td>
                     <td><b style="color:var(--text-white)">${s.description || '-'}</b></td>
                     <td><span style="font-size:12px; opacity:0.8">${s.userdata || '-'}</span></td>
                     <td class="actions">
