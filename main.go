@@ -38,11 +38,10 @@ func parseSnapshotList(input string) []Snapshot {
 	for i, line := range lines {
 		if i < 2 || strings.TrimSpace(line) == "" { continue } 
 		
-		// Normalize separator
+		// Handle both ASCII pipe and Unicode box drawing char
 		line = strings.ReplaceAll(line, "│", "|")
 		parts := strings.Split(line, "|")
 		
-		// Columns: number, type, pre-number, date, user, cleanup, description, userdata
 		if len(parts) < 7 { continue } 
 
 		idStr := strings.TrimSpace(parts[0])
@@ -73,7 +72,6 @@ func parseDiffList(input string) []DiffEntry {
 	var entries []DiffEntry
 	for _, line := range lines {
 		if len(line) < 3 { continue } 
-		// Snapper status: "c..... /path" or "+..... /path"
 		parts := strings.Fields(line)
 		if len(parts) < 2 { continue } 
 		
@@ -97,22 +95,25 @@ func main() {
 	})
 
 	http.HandleFunc("/api/configs", func(w http.ResponseWriter, r *http.Request) {
-		// Try to list files in /etc/snapper/configs first
 		files, err := ioutil.ReadDir("/etc/snapper/configs")
 		var configs []string
 		if err == nil {
 			for _, f := range files { configs = append(configs, f.Name()) }
 		} else {
-			// Fallback to snapper list-configs command parsing if dir not accessible
 			cmd := exec.Command("snapper", "list-configs")
 			out, _ := cmd.Output()
 			lines := strings.Split(string(out), "\n")
 			for i, line := range lines {
 				if i < 2 || line == "" { continue } 
 				parts := strings.Split(line, "|")
+				if len(parts) == 0 { 
+					parts = strings.Split(line, "│") 
+				}
 				if len(parts) > 0 {
-					cfg := strings.TrimSpace(strings.ReplaceAll(parts[0], "│", ""))
-					if cfg != "" { configs = append(configs, cfg) } 
+					cfg := strings.TrimSpace(parts[0])
+					if cfg != "" && cfg != "Config" && !strings.Contains(cfg, "──") { 
+						configs = append(configs, cfg) 
+					}
 				}
 			}
 		}
@@ -122,14 +123,27 @@ func main() {
 	http.HandleFunc("/api/get-config", func(w http.ResponseWriter, r *http.Request) {
 		config := r.URL.Query().Get("config")
 		cmd := exec.Command("snapper", "-c", config, "get-config")
-		output, _ := cmd.Output()
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			fmt.Printf("Error getting config %s: %v\n", config, err)
+		}
+		
 		lines := strings.Split(string(output), "\n")
 		res := make(map[string]string)
 		for _, line := range lines {
-			line = strings.ReplaceAll(line, "│", "|")
-			parts := strings.Split(line, "|")
-			if len(parts) == 2 {
-				res[strings.TrimSpace(parts[0])] = strings.TrimSpace(parts[1])
+			// Check for separator
+			sep := ""
+			if strings.Contains(line, "│") { sep = "│" } else if strings.Contains(line, "|") { sep = "|" } 
+			
+			if sep != "" {
+				parts := strings.Split(line, sep)
+				if len(parts) == 2 {
+					key := strings.TrimSpace(parts[0])
+					val := strings.TrimSpace(parts[1])
+					if key != "" && key != "Key" && !strings.Contains(key, "──") {
+						res[key] = val
+					}
+				}
 			}
 		}
 		json.NewEncoder(w).Encode(res)
@@ -137,7 +151,6 @@ func main() {
 
 	http.HandleFunc("/api/snapshots", func(w http.ResponseWriter, r *http.Request) {
 		config := r.URL.Query().Get("config")
-		// Corrected column names: number, pre-number
 		cmd := exec.Command("snapper", "-c", config, "list", "--columns", "number,type,pre-number,date,user,cleanup,description,userdata")
 		output, _ := cmd.Output()
 		json.NewEncoder(w).Encode(parseSnapshotList(string(output)))
@@ -181,7 +194,7 @@ func main() {
 	http.HandleFunc("/api/delete", func(w http.ResponseWriter, r *http.Request) {
 		config := r.URL.Query().Get("config")
 		id := r.URL.Query().Get("id")
-		exec.Command("snapper", " -c", config, "delete", id).Run()
+		exec.Command("snapper", "-c", config, "delete", id).Run()
 		w.WriteHeader(200)
 	})
 
