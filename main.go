@@ -98,7 +98,6 @@ func main() {
 	http.HandleFunc("/api/configs", func(w http.ResponseWriter, r *http.Request) {
 		files, _ := ioutil.ReadDir("/etc/snapper/configs")
 		var configs []string
-		if err == nil {
 			for _, f := range files { configs = append(configs, f.Name()) }
 		} else {
 			cmd := exec.Command("snapper", "list-configs")
