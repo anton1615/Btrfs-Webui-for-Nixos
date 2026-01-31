@@ -35,29 +35,19 @@ func parseSnapshotList(input string) []Snapshot {
 	lines := strings.Split(input, "\n")
 	snapshots := []Snapshot{}
 	
-	// Snapper list output table usually has headers on the first 2 lines
-	// The separator is usually " | " or " │ "
-	
 	for i, line := range lines {
-		if i < 2 || strings.TrimSpace(line) == "" {
-			continue
-		}
+		if i < 2 || strings.TrimSpace(line) == "" { continue } 
 		
-		// Normalize separators to pipe
+		// Normalize separator
 		line = strings.ReplaceAll(line, "│", "|")
 		parts := strings.Split(line, "|")
 		
-		// Expecting at least 7 columns (ID, Type, Pre, Date, User, Cleanup, Desc)
-		// Userdata is 8th column (optional in output format depending on ver)
-		if len(parts) < 7 {
-			continue
-		}
+		// Columns: number, type, pre-number, date, user, cleanup, description, userdata
+		if len(parts) < 7 { continue } 
 
 		idStr := strings.TrimSpace(parts[0])
 		id, err := strconv.Atoi(idStr)
-		if err != nil {
-			continue // Skip if ID is not a number (e.g. current row marker)
-		}
+		if err != nil { continue } 
 
 		snap := Snapshot{
 			ID:          id,
@@ -82,40 +72,17 @@ func parseDiffList(input string) []DiffEntry {
 	lines := strings.Split(input, "\n")
 	var entries []DiffEntry
 	for _, line := range lines {
-		// Status line format: "c..... /path/to/file"
-		// Only care about lines with content
-		if len(line) < 3 {
-			continue
-		}
-		
-		// The first character usually indicates the change type (+, -, c, .)
-		// Sometimes there's whitespace.
+		if len(line) < 3 { continue } 
+		// Snapper status: "c..... /path" or "+..... /path"
 		parts := strings.Fields(line)
-		if len(parts) < 2 {
-			continue
-		}
-		
-		// Snapper status output:
-		// +..... /file/path
-		// -..... /file/path
-		// c..... /file/path
+		if len(parts) < 2 { continue } 
 		
 		action := string(line[0])
-		// Basic mapping
-		if action == "c" { action = "M" } // Modified
+		if action == "c" { action = "M" } 
 		
-		// Path starts after the status columns
-		// Status columns are fixed width (usually space separated from path)
-		// We can just take the last part or everything after the first whitespace block
-		
-		// Simple approach: split by first space, but file paths can have spaces.
-		// Snapper status usually puts path at the end.
-		// However, let's use the provided logic which seemed to work for tree view
-		// Previous logic: entries = append(entries, DiffEntry{Action: string(line[0]), Path: strings.TrimSpace(line[7:])})
-		// We'll stick to a slightly more robust one
-		
-		path := line[strings.Index(line, " ")+1:]
-		path = strings.TrimSpace(path)
+		pathIndex := strings.Index(line, "/")
+		if pathIndex == -1 { continue } 
+		path := strings.TrimSpace(line[pathIndex:])
 		
 		entries = append(entries, DiffEntry{Action: action, Path: path})
 	}
@@ -130,10 +97,24 @@ func main() {
 	})
 
 	http.HandleFunc("/api/configs", func(w http.ResponseWriter, r *http.Request) {
-		files, _ := ioutil.ReadDir("/etc/snapper/configs")
+		// Try to list files in /etc/snapper/configs first
+		files, err := ioutil.ReadDir("/etc/snapper/configs")
 		var configs []string
-		for _, f := range files {
-			configs = append(configs, f.Name())
+		if err == nil {
+			for _, f := range files { configs = append(configs, f.Name()) }
+		} else {
+			// Fallback to snapper list-configs command parsing if dir not accessible
+			cmd := exec.Command("snapper", "list-configs")
+			out, _ := cmd.Output()
+			lines := strings.Split(string(out), "\n")
+			for i, line := range lines {
+				if i < 2 || line == "" { continue } 
+				parts := strings.Split(line, "|")
+				if len(parts) > 0 {
+					cfg := strings.TrimSpace(strings.ReplaceAll(parts[0], "│", ""))
+					if cfg != "" { configs = append(configs, cfg) } 
+				}
+			}
 		}
 		json.NewEncoder(w).Encode(configs)
 	})
@@ -145,7 +126,6 @@ func main() {
 		lines := strings.Split(string(output), "\n")
 		res := make(map[string]string)
 		for _, line := range lines {
-			// Normalize separator
 			line = strings.ReplaceAll(line, "│", "|")
 			parts := strings.Split(line, "|")
 			if len(parts) == 2 {
@@ -157,8 +137,8 @@ func main() {
 
 	http.HandleFunc("/api/snapshots", func(w http.ResponseWriter, r *http.Request) {
 		config := r.URL.Query().Get("config")
-		// Force list columns to ensure we get userdata
-		cmd := exec.Command("snapper", "-c", config, "list", "--columns", "id,type,pre-id,date,user,cleanup,description,userdata")
+		// Corrected column names: number, pre-number
+		cmd := exec.Command("snapper", "-c", config, "list", "--columns", "number,type,pre-number,date,user,cleanup,description,userdata")
 		output, _ := cmd.Output()
 		json.NewEncoder(w).Encode(parseSnapshotList(string(output)))
 	})
@@ -172,40 +152,16 @@ func main() {
 	})
 
 	http.HandleFunc("/api/undochange", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			return
-		}
+		if r.Method != http.MethodPost { return } 
 		var req struct {
 			Config string   `json:"config"`
 			Range  string   `json:"range"`
 			Paths  []string `json:"paths"`
 		}
 		json.NewDecoder(r.Body).Decode(&req)
-		
-		// Construct args: snapper -c config undochange 1..2 -- "path1" "path2"
 		args := []string{" -c", req.Config, "undochange", req.Range, "--"}
 		args = append(args, req.Paths...)
-		
-		err := exec.Command("snapper", args...).Run()
-		if err != nil {
-			http.Error(w, err.Error(), 500)
-			return
-		}
-		w.WriteHeader(200)
-	})
-
-	http.HandleFunc("/api/rollback", func(w http.ResponseWriter, r *http.Request) {
-		config := r.URL.Query().Get("config")
-		id := r.URL.Query().Get("id")
-		desc := fmt.Sprintf("Rollback to snapshot %s via WebUI", id)
-		
-		// Rollback usually requires root config
-		cmd := exec.Command("snapper", "-c", config, "rollback", "-d", desc, id)
-		err := cmd.Run()
-		if err != nil {
-			http.Error(w, "Rollback failed: "+err.Error(), 500)
-			return
-		}
+		exec.Command("snapper", args...).Run()
 		w.WriteHeader(200)
 	})
 
@@ -214,12 +170,8 @@ func main() {
 		desc := r.URL.Query().Get("description")
 		userdata := r.URL.Query().Get("userdata")
 		args := []string{" -c", config, "create", "--description", desc}
-		if userdata != "" {
-			args = append(args, "--userdata", userdata)
-		}
-		// Print allows use to use default type (usually 'single')
-		err := exec.Command("snapper", args...).Run()
-		if err != nil {
+		if userdata != "" { args = append(args, "--userdata", userdata) } 
+		if err := exec.Command("snapper", args...).Run(); err != nil {
 			http.Error(w, err.Error(), 500)
 			return
 		}
@@ -229,7 +181,7 @@ func main() {
 	http.HandleFunc("/api/delete", func(w http.ResponseWriter, r *http.Request) {
 		config := r.URL.Query().Get("config")
 		id := r.URL.Query().Get("id")
-		exec.Command("snapper", "-c", config, "delete", id).Run()
+		exec.Command("snapper", " -c", config, "delete", id).Run()
 		w.WriteHeader(200)
 	})
 
