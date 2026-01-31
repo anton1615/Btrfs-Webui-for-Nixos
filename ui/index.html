@@ -291,7 +291,7 @@
             const res = await fetch(`/api/get-config?config=${currentConfig}`);
             const d = await res.json();
             $('info-path').innerText = d.SUBVOLUME || '/';
-            $('info-cleanup').innerText = d.TIMELINE_CLEANUP === 'yes' ? 'On' : 'Off';
+            $('info-cleanup').innerText = d.TIMELINE_CREATE === 'yes' ? 'On' : 'Off';
             $('info-limits').innerText = `${d.TIMELINE_LIMIT_HOURLY || 0}H / ${d.TIMELINE_LIMIT_DAILY || 0}D / ${d.TIMELINE_LIMIT_WEEKLY || 0}W / ${d.TIMELINE_LIMIT_MONTHLY || 0}M / ${d.TIMELINE_LIMIT_YEARLY || 0}Y`;
             
             $('modal-conf-display').innerText = currentConfig;

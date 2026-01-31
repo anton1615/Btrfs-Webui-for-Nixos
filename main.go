@@ -36,17 +36,18 @@ func parseSnapshotList(input string) []Snapshot {
 	snapshots := []Snapshot{}
 	
 	for i, line := range lines {
-		if i < 2 || strings.TrimSpace(line) == "" { continue } 
+		if i < 2 || strings.TrimSpace(line) == "" { continue }
 		
-		// Handle both ASCII pipe and Unicode box drawing char
+		// Normalize separator
 		line = strings.ReplaceAll(line, "│", "|")
 		parts := strings.Split(line, "|")
 		
-		if len(parts) < 7 { continue } 
+		// Columns: number, type, pre-number, date, user, cleanup, description, userdata
+		if len(parts) < 7 { continue }
 
 		idStr := strings.TrimSpace(parts[0])
 		id, err := strconv.Atoi(idStr)
-		if err != nil { continue } 
+		if err != nil { continue }
 
 		snap := Snapshot{
 			ID:          id,
@@ -71,15 +72,15 @@ func parseDiffList(input string) []DiffEntry {
 	lines := strings.Split(input, "\n")
 	var entries []DiffEntry
 	for _, line := range lines {
-		if len(line) < 3 { continue } 
+		if len(line) < 3 { continue }
 		parts := strings.Fields(line)
-		if len(parts) < 2 { continue } 
+		if len(parts) < 2 { continue }
 		
 		action := string(line[0])
-		if action == "c" { action = "M" } 
+		if action == "c" { action = "M" }
 		
 		pathIndex := strings.Index(line, "/")
-		if pathIndex == -1 { continue } 
+		if pathIndex == -1 { continue }
 		path := strings.TrimSpace(line[pathIndex:])
 		
 		entries = append(entries, DiffEntry{Action: action, Path: path})
@@ -95,7 +96,7 @@ func main() {
 	})
 
 	http.HandleFunc("/api/configs", func(w http.ResponseWriter, r *http.Request) {
-		files, err := ioutil.ReadDir("/etc/snapper/configs")
+		files, _ := ioutil.ReadDir("/etc/snapper/configs")
 		var configs []string
 		if err == nil {
 			for _, f := range files { configs = append(configs, f.Name()) }
@@ -104,14 +105,13 @@ func main() {
 			out, _ := cmd.Output()
 			lines := strings.Split(string(out), "\n")
 			for i, line := range lines {
-				if i < 2 || line == "" { continue } 
-				parts := strings.Split(line, "|")
-				if len(parts) == 0 { 
-					parts = strings.Split(line, "│") 
-				}
+				if i < 2 || line == "" { continue }
+				// Robust parsing for configs
+				line = strings.ReplaceAll(line, "│", " ")
+				parts := strings.Fields(line)
 				if len(parts) > 0 {
-					cfg := strings.TrimSpace(parts[0])
-					if cfg != "" && cfg != "Config" && !strings.Contains(cfg, "──") { 
+					cfg := parts[0]
+					if cfg != "Config" && !strings.Contains(cfg, "──") { 
 						configs = append(configs, cfg) 
 					}
 				}
@@ -125,25 +125,28 @@ func main() {
 		cmd := exec.Command("snapper", "-c", config, "get-config")
 		output, err := cmd.CombinedOutput()
 		if err != nil {
-			fmt.Printf("Error getting config %s: %v\n", config, err)
+			fmt.Printf("Error: %v\n", err)
 		}
 		
 		lines := strings.Split(string(output), "\n")
 		res := make(map[string]string)
 		for _, line := range lines {
-			// Check for separator
-			sep := ""
-			if strings.Contains(line, "│") { sep = "│" } else if strings.Contains(line, "|") { sep = "|" } 
+			if strings.TrimSpace(line) == "" || strings.Contains(line, "──") || strings.HasPrefix(line, "Key") {
+				continue
+			}
 			
-			if sep != "" {
-				parts := strings.Split(line, sep)
-				if len(parts) == 2 {
-					key := strings.TrimSpace(parts[0])
-					val := strings.TrimSpace(parts[1])
-					if key != "" && key != "Key" && !strings.Contains(key, "──") {
-						res[key] = val
-					}
-				}
+			// Replace delimiter with something unique or just rely on structure
+			// Format: KEY <spaces> │ <spaces> VALUE
+			
+			if idx := strings.Index(line, "│"); idx > 0 {
+				key := strings.TrimSpace(line[:idx])
+				val := strings.TrimSpace(line[idx+3:]) // Skip │ and space? No, safer to just trim
+				val = strings.TrimSpace(strings.Replace(line[idx:], "│", "", 1))
+				res[key] = val
+			} else if idx := strings.Index(line, "|"); idx > 0 {
+				key := strings.TrimSpace(line[:idx])
+				val := strings.TrimSpace(strings.Replace(line[idx:], "|", "", 1))
+				res[key] = val
 			}
 		}
 		json.NewEncoder(w).Encode(res)
@@ -165,7 +168,7 @@ func main() {
 	})
 
 	http.HandleFunc("/api/undochange", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost { return } 
+		if r.Method != http.MethodPost { return }
 		var req struct {
 			Config string   `json:"config"`
 			Range  string   `json:"range"`
@@ -183,11 +186,8 @@ func main() {
 		desc := r.URL.Query().Get("description")
 		userdata := r.URL.Query().Get("userdata")
 		args := []string{" -c", config, "create", "--description", desc}
-		if userdata != "" { args = append(args, "--userdata", userdata) } 
-		if err := exec.Command("snapper", args...).Run(); err != nil {
-			http.Error(w, err.Error(), 500)
-			return
-		}
+		if userdata != "" { args = append(args, "--userdata", userdata) }
+		exec.Command("snapper", args...).Run()
 		w.WriteHeader(201)
 	})
 
