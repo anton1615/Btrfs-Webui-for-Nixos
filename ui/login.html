@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>登入 - Btrfs WebUI</title>
+    <style>
+        body { background: #121212; color: white; font-family: sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
+        .box { background: #1e1e1e; padding: 30px; border-radius: 8px; border: 1px solid #333; width: 300px; }
+        input { width: 100%; padding: 10px; margin: 10px 0; background: #252525; border: 1px solid #444; color: white; box-sizing: border-box; }
+        button { width: 100%; padding: 10px; background: #00bcd4; border: none; font-weight: bold; cursor: pointer; }
+    </style>
+</head>
+<body>
+    <form class="box" action="/login" method="POST">
+        <h2 style="text-align: center; color: #00bcd4;">系統登入</h2>
+        <input type="text" name="username" placeholder="帳號" required>
+        <input type="password" name="password" placeholder="密碼" required>
+        <button type="submit">登入</button>
+    </form>
+</body>
+</html>

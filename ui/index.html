@@ -1,0 +1,441 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Btrfs WebUI Manager</title>
+    <style>
+        :root {
+            --bg: #1e2227;
+            --surface: #282c34;
+            --surface-hover: #2c313a;
+            --text: #abb2bf;
+            --text-white: #ffffff;
+            --primary: #61afef;
+            --success: #98c379;
+            --danger: #e06c75;
+            --warning: #d19a66;
+            --border: #3e4451;
+        }
+
+        * { box-sizing: border-box; }
+        body {
+            margin: 0; padding: 0;
+            background-color: var(--bg);
+            color: var(--text);
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            font-size: 15px;
+            display: flex;
+            justify-content: center;
+            overflow-x: hidden;
+        }
+
+        .app-container {
+            width: 100%;
+            max-width: 1100px;
+            padding: 40px 5%;
+            display: flex;
+            flex-direction: column;
+            gap: 24px;
+        }
+
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: var(--surface);
+            padding: 20px 28px;
+            border-radius: 12px;
+            border: 1px solid var(--border);
+        }
+
+        h1 { font-size: 22px; color: var(--text-white); margin: 0; font-weight: 600; letter-spacing: -0.5px; }
+
+        .toolbar { display: flex; align-items: center; gap: 12px; }
+
+        select, input {
+            background: var(--bg);
+            color: var(--text-white);
+            border: 1px solid var(--border);
+            padding: 8px 12px;
+            border-radius: 6px;
+            outline: none;
+            font-size: 14px;
+        }
+
+        button {
+            cursor: pointer;
+            padding: 8px 16px;
+            border-radius: 6px;
+            font-weight: 600;
+            transition: all 0.15s;
+            border: 1px solid transparent;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 14px;
+        }
+
+        .btn-primary { background: var(--primary); color: var(--bg); }
+        .btn-danger { background: transparent; border-color: var(--danger); color: var(--danger); }
+        .btn-danger:hover { background: var(--danger); color: var(--bg); }
+        .btn-outline { background: transparent; border-color: var(--border); color: var(--text); }
+        .btn-outline:hover { background: var(--surface-hover); color: var(--text-white); }
+
+        /* Snapper Info Card */
+        .info-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 20px 28px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 32px;
+        }
+
+        .info-item label { display: block; font-size: 11px; color: var(--text); opacity: 0.6; text-transform: uppercase; margin-bottom: 4px; }
+        .info-item span { font-size: 15px; font-weight: 600; color: var(--primary); }
+
+        /* Snapshot List */
+        .list-container {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            overflow: hidden;
+        }
+
+        table { width: 100%; border-collapse: collapse; }
+        th {
+            background: var(--surface-hover);
+            padding: 14px 20px;
+            font-size: 12px;
+            text-transform: uppercase;
+            color: var(--text);
+            text-align: left;
+            border-bottom: 1px solid var(--border);
+        }
+
+        td {
+            padding: 14px 20px;
+            border-bottom: 1px solid var(--border);
+            vertical-align: middle;
+            line-height: 1.2;
+        }
+
+        tr:last-child td { border-bottom: none; }
+        tr:hover td { background: rgba(255,255,255,0.02); }
+
+        .id-badge {
+            background: var(--border);
+            color: var(--text-white);
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 13px;
+        }
+
+        .actions { display: flex; gap: 8px; justify-content: flex-end; align-items: center; }
+
+        /* Modals */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.8);
+            backdrop-filter: blur(4px);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .modal {
+            background: var(--surface);
+            width: 100%;
+            max-width: 850px;
+            max-height: 85vh;
+            border-radius: 16px;
+            border: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 30px 60px rgba(0,0,0,0.5);
+        }
+
+        .modal-header { padding: 24px 32px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
+        .modal-body { padding: 32px; overflow-y: auto; flex: 1; }
+        .modal-footer { padding: 20px 32px; border-top: 1px solid var(--border); display: flex; justify-content: flex-end; gap: 12px; }
+
+        /* Tree View */
+        .tree-node {
+            display: flex; align-items: center; padding: 6px 0; gap: 10px; cursor: pointer;
+        }
+        .tree-expander { width: 18px; color: var(--primary); text-align: center; }
+        .tree-children { display: none; margin-left: 24px; border-left: 1px solid var(--border); }
+        .tree-children.open { display: block; }
+        .tree-cb { width: 16px; height: 16px; cursor: pointer; }
+
+        .tag { font-size: 10px; padding: 1px 4px; border-radius: 3px; font-weight: 800; min-width: 18px; text-align: center; margin-right: 4px; }
+        .tag-add { background: var(--success); color: var(--bg); }
+        .tag-del { background: var(--danger); color: var(--bg); }
+        .tag-mod { background: var(--warning); color: var(--bg); }
+
+        /* Loading */
+        .mask { position: absolute; inset: 0; background: rgba(0,0,0,0.4); display: none; align-items: center; justify-content: center; z-index: 100; border-radius: 12px; }
+        .spinner { width: 32px; height: 32px; border: 3px solid var(--border); border-top-color: var(--primary); border-radius: 50%; animation: spin 0.8s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+    </style>
+</head>
+<body>
+    <div class="app-container">
+        <header>
+            <h1>Btrfs WebUI Manager</h1>
+            <div class="toolbar">
+                <select id="config-select" onchange="onConfigChange()"></select>
+                <button class="btn-primary" onclick="openCreateModal()">+ Create Snapshot</button>
+            </div>
+        </header>
+
+        <section class="info-card" id="snapper-info">
+            <div class="info-item"><label>Target Subvolume</label><span id="info-path">-</span></div>
+            <div class="info-item"><label>Cleanup Timeline</label><span id="info-cleanup">-</span></div>
+            <div class="info-item"><label>Retention (H/D/W/M/Y)</label><span id="info-limits">-</span></div>
+        </section>
+
+        <div style="position: relative;">
+            <div class="list-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th width="50">#</th>
+                            <th width="180">Date</th>
+                            <th>Description</th>
+                            <th width="180">User Data</th>
+                            <th width="160" style="text-align: right;">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="snap-list"></tbody>
+                </table>
+            </div>
+            <div class="mask" id="list-mask"><div class="spinner"></div></div>
+        </div>
+    </div>
+
+    <!-- Create Modal -->
+    <div class="modal-overlay" id="create-modal">
+        <div class="modal" style="max-width: 500px;">
+            <div class="modal-header"><h2>New Snapshot</h2></div>
+            <div class="modal-body">
+                <div style="margin-bottom: 24px; padding: 12px; background: var(--bg); border-radius: 8px; border-left: 4px solid var(--primary);">
+                    <div style="font-size: 11px; opacity: 0.6; text-transform: uppercase;">Current Configuration</div>
+                    <div id="modal-conf-display" style="font-weight: 600; color: var(--text-white);"></div>
+                    <div id="modal-path-display" style="font-size: 13px; color: var(--primary);"></div>
+                </div>
+                <div style="display:flex; flex-direction:column; gap:16px;">
+                    <div>
+                        <label style="display:block; font-size:12px; margin-bottom:6px;">Description</label>
+                        <input type="text" id="desc-input" placeholder="What changed?" style="width:100%">
+                    </div>
+                    <div>
+                        <label style="display:block; font-size:12px; margin-bottom:6px;">User Data (e.g. type=manual)</label>
+                        <input type="text" id="user-input" placeholder="key=value" style="width:100%">
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-outline" onclick="closeModals()">Cancel</button>
+                <button class="btn-primary" onclick="doCreate()">Create Now</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Diff Modal -->
+    <div class="modal-overlay" id="diff-modal">
+        <div class="modal">
+            <div class="modal-header">
+                <h2 id="diff-title">Diff Explorer</h2>
+                <div id="diff-stats" style="font-size:12px; opacity:0.7;"></div>
+            </div>
+            <div class="modal-body">
+                <div id="tree-container"></div>
+            </div>
+            <div class="modal-footer">
+                <span id="selected-msg" style="margin-right:auto; align-self:center; font-size:13px; color:var(--success);">0 items selected</span>
+                <button class="btn-outline" onclick="closeModals()">Close</button>
+                <button id="restore-btn" class="btn-primary" style="background:var(--success); display:none;" onclick="submitUndo()">Restore Selected</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentConfig = '';
+        let selectedId = null;
+        let selectedPaths = new Set();
+        const $ = id => document.getElementById(id);
+
+        async function init() {
+            const res = await fetch('/api/configs');
+            const configs = await res.json();
+            $('config-select').innerHTML = configs.map(c => `<option value="${c}">${c}</option>`).join('');
+            currentConfig = configs[0];
+            onConfigChange();
+        }
+
+        function onConfigChange() {
+            currentConfig = $('config-select').value;
+            loadConfigInfo();
+            loadSnapshots();
+        }
+
+        async function loadConfigInfo() {
+            const res = await fetch(`/api/get-config?config=${currentConfig}`);
+            const d = await res.json();
+            $('info-path').innerText = d.SUBVOLUME || '/';
+            $('info-cleanup').innerText = d.TIMELINE_CLEANUP === 'yes' ? 'On' : 'Off';
+            $('info-limits').innerText = `${d.TIMELINE_LIMIT_HOURLY || 0}H / ${d.TIMELINE_LIMIT_DAILY || 0}D / ${d.TIMELINE_LIMIT_WEEKLY || 0}W / ${d.TIMELINE_LIMIT_MONTHLY || 0}M / ${d.TIMELINE_LIMIT_YEARLY || 0}Y`;
+            
+            $('modal-conf-display').innerText = currentConfig;
+            $('modal-path-display').innerText = d.SUBVOLUME || '/';
+        }
+
+        async function loadSnapshots() {
+            $('list-mask').style.display = 'flex';
+            const res = await fetch(`/api/snapshots?config=${currentConfig}`);
+            const snaps = await res.json();
+            $('snap-list').innerHTML = snaps.reverse().map(s => `
+                <tr>
+                    <td><span class="id-badge">${s.id}</span></td>
+                    <td><div style="font-size:13px">${s.date}</div></td>
+                    <td><b style="color:var(--text-white)">${s.description || '-'}</b></td>
+                    <td><span style="font-size:12px; opacity:0.8">${s.userdata || '-'}</span></td>
+                    <td class="actions">
+                        <button class="btn-outline" onclick="openDiff(${s.id})">Diff</button>
+                        <button class="btn-danger" onclick="doDelete(${s.id})">Delete</button>
+                    </td>
+                </tr>
+            `).join('');
+            $('list-mask').style.display = 'none';
+        }
+
+        async function openDiff(id) {
+            selectedId = id;
+            selectedPaths.clear();
+            updateRestoreUI();
+            $('diff-modal').style.display = 'flex';
+            $('diff-title').innerText = `Diff Analysis: Current vs #${id}`;
+            $('tree-container').innerHTML = '<div style="padding:20px; text-align:center;">Scanning Btrfs state...</div>';
+            
+            const res = await fetch(`/api/status?config=${currentConfig}&range=0..${id}`);
+            const diffs = await res.json();
+            $('diff-stats').innerText = `${diffs.length} total changes found`;
+            renderTree(diffs);
+        }
+
+        function renderTree(diffs) {
+            const tree = {};
+            diffs.forEach(d => {
+                const parts = d.path.split('/').filter(p => p);
+                let curr = tree;
+                parts.forEach((p, i) => {
+                    if(!curr[p]) curr[p] = { children: {}, name: p, fullPath: '/' + parts.slice(0,i+1).join('/'), action: null };
+                    if(i === parts.length - 1) curr[p].action = d.action;
+                    curr = curr[p].children;
+                });
+            });
+            $('tree-container').innerHTML = '';
+            buildTreeDOM(tree, $('tree-container'), 0);
+        }
+
+        function buildTreeDOM(nodes, container, depth) {
+            const wrap = document.createElement('div');
+            Object.keys(nodes).sort().forEach(name => {
+                const node = nodes[name];
+                const hasChildren = Object.keys(node.children).length > 0;
+                const nodeGroup = document.createElement('div');
+                nodeGroup.className = 'tree-group';
+                
+                const row = document.createElement('div');
+                row.className = 'tree-node';
+                row.innerHTML = `
+                    <div class="tree-expander">${hasChildren ? '▶' : ''}</div>
+                    <input type="checkbox" class="tree-cb" data-path="${node.fullPath}" onclick="event.stopPropagation()" onchange="handleRecursiveCb(this)">
+                    ${node.action ? `<span class="tag tag-${node.action==='+'?'add':node.action==='-'?'del':'mod'}">${node.action.toUpperCase()}</span>` : '<span style="width:22px"></span>'}
+                    <span style="color: ${hasChildren ? 'var(--text-white)' : 'inherit'}">${hasChildren ? '📁' : '📄'} ${name}</span>
+                `;
+
+                nodeGroup.appendChild(row);
+                if(hasChildren) {
+                    const childWrap = document.createElement('div');
+                    childWrap.className = 'tree-children';
+                    buildTreeDOM(node.children, childWrap, depth + 1);
+                    nodeGroup.appendChild(childWrap);
+                    row.onclick = () => {
+                        const isOpen = childWrap.classList.toggle('open');
+                        row.querySelector('.tree-expander').innerText = isOpen ? '▼' : '▶';
+                    };
+                }
+                wrap.appendChild(nodeGroup);
+            });
+            container.appendChild(wrap);
+        }
+
+        function handleRecursiveCb(el) {
+            const isChecked = el.checked;
+            const parentGroup = el.closest('.tree-group');
+            const childCbs = parentGroup.querySelectorAll('.tree-cb');
+            
+            childCbs.forEach(cb => {
+                cb.checked = isChecked;
+                const path = cb.getAttribute('data-path');
+                if(isChecked) selectedPaths.add(path);
+                else selectedPaths.delete(path);
+            });
+            updateRestoreUI();
+        }
+
+        function updateRestoreUI() {
+            $('selected-msg').innerText = `${selectedPaths.size} items selected`;
+            $('restore-btn').style.display = selectedPaths.size > 0 ? 'block' : 'none';
+        }
+
+        async function submitUndo() {
+            if(!confirm(`Restore ${selectedPaths.size} items to Snapshot #${selectedId} state?`)) return;
+            $('list-mask').style.display = 'flex';
+            closeModals();
+            await fetch('/api/undochange', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ config: currentConfig, range: `0..${selectedId}`, paths: Array.from(selectedPaths) })
+            });
+            alert('Restore command submitted.');
+            loadSnapshots();
+        }
+
+        async function doDelete(id) {
+            if(!confirm(`Permanently delete snapshot #${id}?`)) return;
+            await fetch(`/api/delete?config=${currentConfig}&id=${id}`);
+            loadSnapshots();
+        }
+
+        function openCreateModal() { $('create-modal').style.display = 'flex'; }
+        function closeModals() { document.querySelectorAll('.modal-overlay').forEach(m => m.style.display = 'none'); }
+
+        async function doCreate() {
+            const desc = $('desc-input').value;
+            const user = $('user-input').value;
+            closeModals();
+            $('list-mask').style.display = 'flex';
+            const res = await fetch(`/api/create?config=${currentConfig}&description=${encodeURIComponent(desc)}&userdata=${encodeURIComponent(user)}`, {method:'POST'});
+            if(res.ok) {
+                // Wait a bit for snapper to finish disk write
+                setTimeout(loadSnapshots, 500);
+            } else {
+                alert('Create failed');
+                $('list-mask').style.display = 'none';
+            }
+        }
+
+        init();
+    </script>
+</body>
+</html>

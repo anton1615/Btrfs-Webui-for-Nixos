@@ -1,0 +1,5 @@
+btrfs-webui-nix
+bin/
+result
+.direnv/
+go.sum
