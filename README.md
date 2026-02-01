@@ -22,8 +22,17 @@ Performing a Btrfs-level `rollback` (changing the default subvolume) on NixOS ca
 1.  Using **Nix Generations** for full system rollbacks.
 2.  Using this **WebUI (UndoChange)** for granular data and configuration file recovery.
 
-## 📦 Installation (NixOS Flake)
+## 📋 Requirements
 
+To run this WebUI, your system must meet the following criteria:
+*   **Operating System:** NixOS (Flake-based recommended).
+*   **Filesystem:** Btrfs.
+*   **Core Utility:** `snapper` must be installed and active (the WebUI calls `/run/current-system/sw/bin/snapper`).
+*   **Permissions:** The service must run as `root` to execute snapshot operations.
+
+## 📦 Installation & Service Configuration
+
+### 1. Flake Input
 Add this repo to your `flake.nix` inputs:
 
 ```nix
@@ -31,65 +40,60 @@ Add this repo to your `flake.nix` inputs:
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/nixos-25.11";
     btrfs-webui.url = "github:anton1615/Btrfs-Webui-for-Nixos";
-    # Optional: ensure it uses your system's nixpkgs version
+    # Ensure it uses your system's nixpkgs version to save space
     btrfs-webui.inputs.nixpkgs.follows = "nixpkgs";
   };
+  # ...
+}
+```
 
-  outputs = { self, nixpkgs, btrfs-webui, ... }@inputs: {
-    nixosConfigurations.your-hostname = nixpkgs.lib.nixosSystem {
-      specialArgs = { inherit inputs; };
-      modules = [
-        # ... your other modules
-        ({ config, pkgs, inputs, ... }: {
-          environment.systemPackages = [ 
-            inputs.btrfs-webui.packages.${pkgs.system}.default 
-          ];
-          
-          systemd.services.btrfs-webui = {
-            description = "Btrfs Snapshot Web Dashboard";
-            after = [ "network.target" ];
-            wantedBy = [ "multi-user.target" ];
-            serviceConfig = {
-              ExecStart = "${inputs.btrfs-webui.packages.${pkgs.system}.default}/bin/Btrfs-Webui-for-Nixos";
-              User = "root"; # Required to run snapper commands
-              Restart = "always";
-            };
-          };
-        })
-      ];
+### 2. Systemd Service Declaration
+In your `configuration.nix` (or any imported module), define the system package and the service. 
+
+**Note:** The service binds to **Port 8888** by default.
+
+```nix
+{ config, pkgs, inputs, ... }: {
+  # 1. Install the package
+  environment.systemPackages = [ 
+    inputs.btrfs-webui.packages.${pkgs.system}.default 
+  ];
+  
+  # 2. Define the service
+  systemd.services.btrfs-webui = {
+    description = "Btrfs Snapshot Web Dashboard";
+    after = [ "network.target" ];
+    wantedBy = [ "multi-user.target" ];
+    serviceConfig = {
+      # The binary is named 'Btrfs-Webui-for-Nixos'
+      ExecStart = "${inputs.btrfs-webui.packages.${pkgs.system}.default}/bin/Btrfs-Webui-for-Nixos";
+      User = "root"; # Required to run 'snapper' commands
+      Restart = "always";
     };
   };
 }
 ```
 
-## ⚙️ Configuration
+## 🌐 Accessing the WebUI
 
-This UI **does not** manage Snapper configurations (creating new configs or changing intervals). You should define your Snapper configs in your NixOS configuration:
+Once deployed, the service will start automatically.
 
-```nix
-services.snapper.configs = {
-  home = {
-    SUBVOLUME = "/home";
-    TIMELINE_CREATE = true;
-    TIMELINE_CLEANUP = true;
-  };
-};
-```
+*   **URL:** `http://localhost:8888`
+*   **Port:** `8888` (Hardcoded in `main.go`)
+*   **Network:** By default, it listens on all interfaces (`:8888`). If you want to expose it securely, we recommend using **Tailscale Serve** or a reverse proxy.
 
-## 🧪 Technical Details
+## ⚙️ Snapper Configuration
 
-*   **Backend:** Go (Standard Library only, zero dependencies for core logic).
+This UI **does not** manage Snapper configurations (creating new configs or changing intervals). You should define your Snapper configs in your NixOS configuration using the declarative `services.snapper.configs` option.
+
+## 🧪 Technical Details & Testing Environment
+
+*   **Backend:** Go (Standard Library only).
 *   **Frontend:** Pure HTML/JS/CSS (Vanilla, no frameworks, encapsulated via Go `embed`).
-*   **Process:** Calls `/run/current-system/sw/bin/snapper` directly to ensure NixOS compatibility.
-*   **Testing Environment:** 
-    *   **OS:** NixOS 25.11 (Unstable/Stable)
-    *   **Architecture:** x86_64
-    *   **Hardware:** ASUS X550VC (4GB RAM, i5-3230M)
-    *   **Btrfs Layout:** Disko-managed subvolumes.
-
-## 📄 License
-
-This project is licensed under the **MIT License**.
+*   **Snapper Integration:** Calls `/run/current-system/sw/bin/snapper` directly to ensure NixOS compatibility.
+*   **Tested Hardware:** ASUS X550VC (Intel i5-3230M, 4GB RAM).
+*   **Tested OS:** NixOS 25.11 (Flake-based).
+*   **License:** MIT License.
 
 ---
 *Developed with ❤️ using Gemini CLI.*
