@@ -50,14 +50,18 @@ Add this repo to your `flake.nix` inputs:
 ### 2. Systemd Service Declaration
 In your `configuration.nix` (or any imported module), define the system package and the service. 
 
-**Note:** The service binds to **Port 8888** by default.
+**Note:** Modern NixOS (24.11+) recommends using `stdenv.hostPlatform.system`.
 
 ```nix
-{ config, pkgs, inputs, ... }: {
+{ config, pkgs, inputs, ... }: 
+
+let
+  # Retrieve the package from the flake input
+  btrfs-webui-pkg = inputs.btrfs-webui.packages.${pkgs.stdenv.hostPlatform.system}.default;
+in
+{
   # 1. Install the package
-  environment.systemPackages = [ 
-    inputs.btrfs-webui.packages.${pkgs.system}.default 
-  ];
+  environment.systemPackages = [ btrfs-webui-pkg ];
   
   # 2. Define the service
   systemd.services.btrfs-webui = {
@@ -66,11 +70,17 @@ In your `configuration.nix` (or any imported module), define the system package 
     wantedBy = [ "multi-user.target" ];
     serviceConfig = {
       # The binary is named 'Btrfs-Webui-for-Nixos'
-      ExecStart = "${inputs.btrfs-webui.packages.${pkgs.system}.default}/bin/Btrfs-Webui-for-Nixos";
+      ExecStart = "${btrfs-webui-pkg}/bin/Btrfs-Webui-for-Nixos";
       User = "root"; # Required to run 'snapper' commands
       Restart = "always";
+      WorkingDirectory = "/var/lib/btrfs-webui";
     };
   };
+
+  # Create necessary working directory
+  systemd.tmpfiles.rules = [
+    "d /var/lib/btrfs-webui 0750 root root -"
+  ];
 }
 ```
 
