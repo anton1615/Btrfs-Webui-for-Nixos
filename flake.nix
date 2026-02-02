@@ -12,7 +12,7 @@
           version = "0.3.0";
           src = ./.;
           # 這裡設為空，讓它報錯告訴我正確 Hash
-          vendorHash = "sha256-aobM88KHWcJW/yjnDqNOlbbOQvfRc2vBfffq/N/Vlo8=";
+          vendorHash = "sha256-Rdrswp2DkhVoVNCbGnoXc31EctUAxp+xcRMu/XsB4d4=";
           buildInputs = [ pkgs.linux-pam ];
         };
       });
