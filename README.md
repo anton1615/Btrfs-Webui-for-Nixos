@@ -6,6 +6,12 @@
 
 A lightweight, Go-based web interface designed specifically for managing Btrfs snapshots on NixOS via **Snapper**. This project aims to provide a clean, "File Explorer" style dashboard for users who want to visualize their snapshot history and perform granular file restorations without leaving the browser.
 
+## Security Notice
+
+> This WebUI should be treated as a privileged administrative surface.
+> Prefer localhost-only binding or place it behind authenticated access control such as a trusted reverse proxy or Tailscale-based access layer.
+> Do not expose it directly to the public internet without reviewing authentication, authorization, and network restrictions first.
+
 ## 🚀 Features
 
 *   **Snapshot Browser:** List all snapshots for different Snapper configurations (e.g., `home`, `var`).
